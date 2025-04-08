@@ -10,15 +10,10 @@ class AuctionParticipant:
         nickname (str, optional): The participant's nickname. Defaults to 'anonymous' with a unique ID.
         balance (float, optional): The participant's initial balance. Defaults to 0.
     """
-    _anonymous_counter = 0
     _participants_counter = 0
 
-    def __init__(self, nickname: str = 'anonymous', balance: float = 0):
-        if nickname == 'anonymous':
-            self._nickname = nickname + f'_{AuctionParticipant._anonymous_counter}'
-            AuctionParticipant._anonymous_counter += 1
-        else:
-            self._nickname = nickname
+    def __init__(self, nickname: str, balance: float = 0):
+        self._nickname = nickname
         self._balance = balance
         self._lots = []
         self._participant_id = AuctionParticipant._participants_counter
@@ -26,10 +21,10 @@ class AuctionParticipant:
 
     def __repr__(self):
         return (f"AuctionParticipant(ID={self._participant_id}, "
-                f"nickname='{self._nickname}', balance={self._balance})")
+                f"nickname='{self._nickname if self._nickname else f'anonymous_{self._participant_id}'}', balance={self._balance})")
 
     def __str__(self):
-        return (f"ID: {self._participant_id:<3} nickname: {self._nickname:<10} "
+        return (f"ID: {self._participant_id:<3} nickname: {self._nickname if self._nickname else f'anonymous_{self._participant_id}':<15} "
                 f"balance: {self._balance}")
 
     def __eq__(self, other) -> bool:
@@ -51,7 +46,7 @@ class AuctionParticipant:
         """
         Returns the participant's nickname.
         """
-        return self._nickname
+        return self._nickname if self._nickname else f'anonymous_{self._participant_id}'
 
     @nickname.setter
     def nickname(self, value: str):
@@ -138,8 +133,3 @@ class AuctionParticipant:
     @classmethod
     def participants_counter(cls) -> int:
         return AuctionParticipant._participants_counter
-
-    @property
-    @classmethod
-    def anonymous_counter(cls) -> int:
-        return AuctionParticipant._anonymous_counter

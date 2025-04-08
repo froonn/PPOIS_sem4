@@ -17,41 +17,47 @@ class StateMachine:
     States:
         - preparing_for_auction: The auction is being prepared.
         - accepting_bids: The auction is accepting bids.
+        - auction_paused: The auction is temporarily paused.
+        - auction_ended: The auction has ended.
     """
-    states = ['preparing_for_auction', 'accepting_bids']
+    states = ['preparing_for_auction', 'accepting_bids', 'auction_paused']
 
-    def __init__(self):
-        """Initializes the state machine."""
+    def __init__(self) -> None:
+        """
+        Initializes the state machine with the initial state 'preparing_for_auction'.
+        """
         self.machine = Machine(model=self, states=StateMachine.states, initial='preparing_for_auction')
-        # Define state transitions
-        self.machine.add_transition(trigger='on_start_auction', source='preparing_for_auction', dest='accepting_bids')
-        self.machine.add_transition(trigger='on_stop_auction', source='accepting_bids', dest='preparing_for_auction')
 
+        self.machine.add_transition(trigger='on_start_auction', source='preparing_for_auction', dest='accepting_bids')
+        self.machine.add_transition(trigger='on_end_auction', source='accepting_bids', dest='preparing_for_auction')
+        self.machine.add_transition(trigger='on_end_auction', source='auction_paused', dest='preparing_for_auction')
+        self.machine.add_transition(trigger='on_pause_auction', source='accepting_bids', dest='auction_paused')
+        self.machine.add_transition(trigger='on_resume_auction', source='auction_paused', dest='accepting_bids')
+        self.machine.add_transition(trigger='on_restart_auction', source='auction_paused', dest='accepting_bids')
+        self.machine.add_transition(trigger='on_abort_auction', source='auction_paused', dest='preparing_for_auction')
 
 class TradingPlatform(StateMachine):
     """
-    Class for managing an auction trading platform.
-
-    This class handles auction lifecycle, including adding participants and lots,
-    starting and stopping auctions, placing bids, and managing state persistence.
+    A class representing a trading platform for managing auctions, inheriting from StateMachine.
 
     Attributes:
         _participants (List[AuctionParticipant]): List of auction participants.
         _lots (List[Lot]): List of lots available for auction.
-        _sold_lots (List[Lot]): List of lots that have been sold in auctions.
-        _current_bid (Bid): The current highest bid in the active auction.
-        _current_lot (Lot): The lot currently being auctioned.
-        _timer (Timer): Timer for automatically stopping the auction.
-        _timeout (int): Timeout duration in seconds for automatic auction stop.
-        _lock (threading.Lock): Lock to ensure thread safety for state modifications.
+        _sold_lots (List[Lot]): List of sold lots.
+        _current_bid (Bid): The current bid in the auction.
+        _current_lot (Lot): The current lot being auctioned.
+        _timer (Timer): Timer for managing auction timeouts.
+        _timeout (int): Timeout duration for the auction.
+        _lock (threading.Lock): Lock for thread-safe operations.
+        _timer_expired (bool): Flag indicating if the timer has expired.
     """
 
-    def __init__(self, load_on_init=False):
+    def __init__(self, load_on_init: bool = False) -> None:
         """
-        Initializes the TradingPlatform.
+        Initializes the trading platform and optionally loads the state from a file.
 
         Args:
-            load_on_init (bool, optional): If True, loads state from file on initialization. Defaults to False.
+            load_on_init (bool): Whether to load the state on initialization.
         """
         super().__init__()
         self._participants = []
@@ -62,22 +68,16 @@ class TradingPlatform(StateMachine):
         self._timer = None
         self._timeout = 60
         self._lock = threading.Lock()
-        self._timer_expired = False  # Add a flag to indicate timer expiration
+        self._timer_expired = False
 
         if load_on_init:
             self._load_state()
 
     @ensure_state('preparing_for_auction')
     @save
-    def start_auction(self):
+    def start_auction(self) -> None:
         """
-        Starts a new auction.
-
-        Transitions the state from 'preparing_for_auction' to 'accepting_bids'.
-        Sets the first available lot as the current lot and starts the auction timer.
-
-        Raises:
-            ValueError: If there are no lots available to start the auction.
+        Starts the auction by transitioning to the 'accepting_bids' state and initializing the first lot and bid.
         """
         with self._lock:
             if not self._lots:
@@ -85,22 +85,18 @@ class TradingPlatform(StateMachine):
             self.on_start_auction()
             self._current_lot = self._lots.pop(0)
             self._current_bid = Bid(self._current_lot)
-            self._timer_expired = False  # Reset the flag when starting a new auction
+            self._timer_expired = False
             self._timer = Timer(timeout=self._timeout, callback=self._timer_callback)
             self._timer.start()
 
-    @ensure_state('accepting_bids')
+    @ensure_state('accepting_bids', 'auction_paused')
     @save
-    def stop_auction(self):
+    def end_auction(self) -> None:
         """
-        Stops the current auction.
-
-        Transitions the state from 'accepting_bids' to 'preparing_for_auction'.
-        Determines the winner based on the current bid, transfers the lot,
-        and resets the current bid and lot. Auto-saves the state after stopping.
+        Stops the auction by transitioning to the 'preparing_for_auction' state and processing the current bid.
         """
         with self._lock:
-            self.on_stop_auction()
+            self.on_end_auction()
             if self._current_bid and self._current_bid.participant:
                 self._current_bid.participant.lots.append(self._current_lot)
                 self._current_bid.participant.balance -= self._current_bid.amount
@@ -111,21 +107,49 @@ class TradingPlatform(StateMachine):
             self._current_lot = None
             if self._timer:
                 self._timer.cancel()
-            return True
+
+    @ensure_state('accepting_bids')
+    def pause_auction(self) -> None:
+        with self._lock:
+            self.on_pause_auction()
+            if self._timer:
+                self._timer.cancel()
+
+    @ensure_state('auction_paused')
+    def resume_auction(self) -> None:
+        with self._lock:
+            self.on_resume_auction()
+            self._timer = Timer(timeout=self._timeout, callback=self._timer_callback)
+            self._timer.start()
+
+    @ensure_state('auction_paused')
+    def restart_auction(self) -> None:
+        with self._lock:
+            self.on_restart_auction()
+            self._current_bid = Bid(self._current_lot)
+            self._timer_expired = False
+            self._timer = Timer(timeout=self._timeout, callback=self._timer_callback)
+            self._timer.start()
+
+    @ensure_state('auction_paused')
+    @save
+    def abort_auction(self) -> None:
+        with self._lock:
+            self.on_abort_auction()
+            self.add(self._current_lot)
+            self._current_bid = None
+            self._current_lot = None
+            if self._timer:
+                self._timer.cancel()
 
     @ensure_state('preparing_for_auction')
     @save
-    def add(self, *args: Union[AuctionParticipant, Lot, List[Union[AuctionParticipant, Lot]]]):
+    def add(self, *args: Union[AuctionParticipant, Lot, List[Union[AuctionParticipant, Lot]]]) -> None:
         """
-        Adds participants or lots to the trading platform.
-
-        Can add single items or lists of items. Autosaves state after adding.
+        Adds participants or lots to the auction.
 
         Args:
-            *args: Variable number of AuctionParticipant, Lot objects, or lists of these.
-
-        Raises:
-            TypeError: If an argument is of an unsupported type.
+            *args (Union[AuctionParticipant, Lot, List[Union[AuctionParticipant, Lot]]]): Participants or lots to add.
         """
         with self._lock:
             for arg in args:
@@ -137,16 +161,12 @@ class TradingPlatform(StateMachine):
                 else:
                     raise TypeError(f"Unsupported type: {type(arg)}. Expected AuctionParticipant, Lot, or List")
 
-    def _add_single(self, item: Union[AuctionParticipant, Lot]):
+    def _add_single(self, item: Union[AuctionParticipant, Lot]) -> None:
         """
-        Adds a single participant or lot to the platform.
+        Adds a single participant or lot to the auction.
 
         Args:
-            item (Union[AuctionParticipant, Lot]): The item to add.
-
-        Raises:
-            TypeError: If the item is not an AuctionParticipant or Lot.
-            ValueError: If the lot is already sold.
+            item (Union[AuctionParticipant, Lot]): Participant or lot to add.
         """
         if isinstance(item, AuctionParticipant):
             if item not in self._participants:
@@ -161,28 +181,20 @@ class TradingPlatform(StateMachine):
 
     @ensure_state('preparing_for_auction')
     @save
-    def remove(self, *args: Union[AuctionParticipant, Lot, List[Union[AuctionParticipant, Lot]]]):
+    def remove(self, *args: Union[AuctionParticipant, Lot, List[Union[AuctionParticipant, Lot]]]) -> None:
         """
-        Removes participants and/or lots from the platform. Autosaves state after removal.
-
-        Handles individual items or lists. If a participant is removed, their owned lots
-        that are already sold are also removed from sold lots.
+        Removes participants or lots from the auction.
 
         Args:
-            *args: Variable number of AuctionParticipant, Lot objects, or lists of these.
-
-        Raises:
-            ValueError: If a participant or lot is not found.
-            TypeError: If an argument is of an unsupported type.
+            *args (Union[AuctionParticipant, Lot, List[Union[AuctionParticipant, Lot]]]): Participants or lots to remove.
         """
         with self._lock:
             for arg in args:
-                if isinstance(arg, (list, tuple, set)):  # Handle lists, tuples or sets
-                    self.remove(*arg)  # Recursively process each element
+                if isinstance(arg, (list, tuple, set)):
+                    self.remove(*arg)
                 elif isinstance(arg, AuctionParticipant):
                     if arg not in self._participants:
                         raise ValueError(f"Participant '{arg}' not found")
-                    # Remove sold lots owned by the participant
                     for lot in arg.lots:
                         if lot in self._sold_lots:
                             self._sold_lots.remove(lot)
@@ -195,14 +207,20 @@ class TradingPlatform(StateMachine):
                     raise TypeError(f"Unsupported type: {type(arg)}. Expected AuctionParticipant, Lot, or an iterable of these types.")
 
     @ensure_state('accepting_bids')
-    def _timer_callback(self):
+    def _timer_callback(self) -> None:
+        """
+        Callback function for the timer, stops the auction when the timer expires.
+        """
         self._timer_expired = True
-        self.stop_auction()
+        self.end_auction()
 
     @property
     def participants(self) -> List[AuctionParticipant]:
         """
-        Returns the list of participants in the auction platform.
+        Returns the list of auction participants.
+
+        Returns:
+            List[AuctionParticipant]: List of auction participants.
         """
         return self._participants
 
@@ -210,13 +228,19 @@ class TradingPlatform(StateMachine):
     def lots(self) -> List[Lot]:
         """
         Returns the list of lots available for auction.
+
+        Returns:
+            List[Lot]: List of lots available for auction.
         """
         return self._lots
 
     @property
     def sold_lots(self) -> List[Lot]:
         """
-        Returns the list of lots that have been sold.
+        Returns the list of sold lots.
+
+        Returns:
+            List[Lot]: List of sold lots.
         """
         return self._sold_lots
 
@@ -224,19 +248,22 @@ class TradingPlatform(StateMachine):
     @ensure_state('preparing_for_auction')
     def timeout(self) -> int:
         """
-        Returns the timeout duration for the auction timer in seconds.
+        Returns the timeout duration for the auction.
+
+        Returns:
+            int: Timeout duration for the auction.
         """
         return self._timeout
 
     @timeout.setter
     @ensure_state('preparing_for_auction')
     @save
-    def timeout(self, value: int):
+    def timeout(self, value: int) -> None:
         """
-        Sets the timeout duration for the auction timer and autosaves state.
+        Sets the timeout duration for the auction.
 
         Args:
-            value (int): The new timeout duration in seconds.
+            value (int): Timeout duration for the auction.
         """
         self._timeout = value
 
@@ -245,6 +272,9 @@ class TradingPlatform(StateMachine):
     def current_lot(self) -> Lot:
         """
         Returns the current lot being auctioned.
+
+        Returns:
+            Lot: The current lot being auctioned.
         """
         return self._current_lot
 
@@ -252,17 +282,17 @@ class TradingPlatform(StateMachine):
     @ensure_state('accepting_bids')
     def current_bid(self) -> Bid:
         """
-        Returns the current highest bid.
+        Returns the current bid in the auction.
+
+        Returns:
+            Bid: The current bid in the auction.
         """
         return self._current_bid
 
     @ensure_state('accepting_bids')
-    def place_bid(self, participant: AuctionParticipant, amount: float):
+    def place_bid(self, participant: AuctionParticipant, amount: float) -> None:
         """
-        Places a bid for the current lot.
-
-        Validates the bid amount and participant's balance, increases the current bid,
-        and restarts the auction timer.
+        Places a bid on the current lot.
 
         Args:
             participant (AuctionParticipant): The participant placing the bid.
@@ -279,22 +309,19 @@ class TradingPlatform(StateMachine):
                 raise ValueError("Bid amount must be greater than the current bid")
             if amount > participant.balance:
                 raise ValueError("Bid amount exceeds participant balance")
-            self._current_bid.increase_bid(amount, participant)  # Increase bid amount
+            self._current_bid.increase_bid(amount, participant)
             if self._timer:
-                self._timer.cancel()  # Reset timer
-            self._timer = Timer(timeout=self._timeout, callback=self.stop_auction)  # Start new timer
-            self._timer.start()  # Start the timer
+                self._timer.cancel()
+            self._timer = Timer(timeout=self._timeout, callback=self.end_auction)
+            self._timer.start()
 
-    def _save_state(self):
+    def _save_state(self) -> None:
         """
-        Saves the current state of the TradingPlatform to a JSON file.
-
-        Includes participants, lots, sold lots, counters, and timeout settings.
+        Saves the current state of the auction to a file.
         """
         state_data = {
-            'participants_counter': AuctionParticipant._participants_counter,  # Changed to class variable
-            'anonymous_counter': AuctionParticipant._anonymous_counter,  # Changed to class variable
-            'lot_counter': Lot._lot_counter,  # Changed to class variable
+            'participants_counter': AuctionParticipant._participants_counter,
+            'lot_counter': Lot._lot_counter,
             'timeout': self._timeout,
             'participants': [p._to_dict() for p in self._participants],
             'lots': [lot._to_dict() for lot in self._lots],
@@ -303,12 +330,9 @@ class TradingPlatform(StateMachine):
         with open(STATE_FILE, 'w') as f:
             json.dump(state_data, f, indent=4)
 
-    def _load_state(self):
+    def _load_state(self) -> None:
         """
-        Loads the state of the TradingPlatform from a JSON file.
-
-        Restores participants, lots, sold lots, counters, and timeout settings
-        from the saved state. Handles cases where the state file is not found or is corrupted.
+        Loads the state of the auction from a file.
         """
         try:
             with open(STATE_FILE, 'r') as f:
@@ -344,7 +368,6 @@ class TradingPlatform(StateMachine):
             self._participants = loaded_participants
 
             AuctionParticipant._participants_counter = max(state_data.get('participants_counter', 0), max_participant_ID + 1)
-            AuctionParticipant._anonymous_counter = state_data.get('anonymous_counter', 0)
 
             Lot._lot_counter = max(state_data.get('lot_counter', 0), max_lot_ID + 1)
             self._timeout = state_data.get('timeout', 60)
