@@ -18,7 +18,6 @@ class StateMachine:
         - preparing_for_auction: The auction is being prepared.
         - accepting_bids: The auction is accepting bids.
         - auction_paused: The auction is temporarily paused.
-        - auction_ended: The auction has ended.
     """
     states = ['preparing_for_auction', 'accepting_bids', 'auction_paused']
 
