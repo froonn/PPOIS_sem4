@@ -8,7 +8,7 @@ class Bid:
 
     Args:
         lot (Lot): The auction lot for which the bid is placed.
-        amount (float, optional): The bid amount. Defaults to 0.
+        amount (int, optional): The bid amount. Defaults to 0.
         participant (AuctionParticipant, optional): The auction participant making the bid. Defaults to None.
 
     Raises:
@@ -16,7 +16,7 @@ class Bid:
         ValueError: If the bid amount exceeds the participant's balance.
     """
 
-    def __init__(self, lot: Lot, amount: float = 0, participant: AuctionParticipant = None):
+    def __init__(self, lot: Lot, amount: int = 0, participant: AuctionParticipant = None):
         if participant and amount < lot.minimum_bid:
             raise ValueError("Bid amount is less than the minimum bid")
         if participant and amount > participant.balance:
@@ -44,12 +44,12 @@ class Bid:
                 self._participant == other._participant and
                 self._amount == other._amount)
 
-    def increase_bid(self, new_amount: float, participant: AuctionParticipant):
+    def increase_bid(self, new_amount: int, participant: AuctionParticipant):
         """
         Increases the current bid amount if the new bid is valid.
 
         Args:
-            new_amount (float): The new bid amount, which must be greater than the current bid.
+            new_amount (int): The new bid amount, which must be greater than the current bid.
             participant (AuctionParticipant): The auction participant placing the new bid.
 
         Raises:
@@ -78,7 +78,7 @@ class Bid:
         return self._participant
 
     @property
-    def amount(self) -> float:
+    def amount(self) -> int:
         """
         Returns the current bid amount.
         """

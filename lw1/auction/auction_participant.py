@@ -8,11 +8,11 @@ class AuctionParticipant:
 
     Args:
         nickname (str, optional): The participant's nickname. Defaults to 'anonymous' with a unique ID.
-        balance (float, optional): The participant's initial balance. Defaults to 0.
+        balance (int, optional): The participant's initial balance. Defaults to 0.
     """
     _participants_counter = 0
 
-    def __init__(self, nickname: str, balance: float = 0):
+    def __init__(self, nickname: str, balance: int = 0):
         self._nickname = nickname
         self._balance = balance
         self._lots = []
@@ -59,19 +59,19 @@ class AuctionParticipant:
         self._nickname = value
 
     @property
-    def balance(self) -> float:
+    def balance(self) -> int:
         """
         Returns the participant's balance.
         """
         return self._balance
 
     @balance.setter
-    def balance(self, value: float):
+    def balance(self, value: int):
         """
         Sets the participant's balance.
 
         Args:
-            value (float): The new balance for the participant.
+            value (int): The new balance for the participant.
         """
         self._balance = value
 
@@ -129,7 +129,6 @@ class AuctionParticipant:
             cls._participants_counter = participant._participant_id + 1
         return participant
 
-    @property
     @classmethod
     def participants_counter(cls) -> int:
         return AuctionParticipant._participants_counter

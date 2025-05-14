@@ -36,6 +36,7 @@ class StateMachine:
         self.machine.add_transition(trigger='on_restart_auction', source='auction_paused', dest='accepting_bids')
         self.machine.add_transition(trigger='on_abort_auction', source='auction_paused', dest='preparing_for_auction')
 
+
 class TradingPlatform(StateMachine):
     """
     A class representing a trading platform for managing auctions, inheriting from StateMachine.
@@ -49,7 +50,6 @@ class TradingPlatform(StateMachine):
         _timer (Timer): Timer for managing auction timeouts.
         _timeout (int): Timeout duration for the auction.
         _lock (threading.Lock): Lock for thread-safe operations.
-        _timer_expired (bool): Flag indicating if the timer has expired.
     """
 
     def __init__(self, load_on_init: bool = False) -> None:
@@ -68,7 +68,6 @@ class TradingPlatform(StateMachine):
         self._timer = None
         self._timeout = 60
         self._lock = threading.Lock()
-        self._timer_expired = False
 
         if load_on_init:
             self._load_state()
@@ -79,15 +78,15 @@ class TradingPlatform(StateMachine):
         """
         Starts the auction by transitioning to the 'accepting_bids' state and initializing the first lot and bid.
         """
-        with self._lock:
-            if not self._lots:
-                raise ValueError("No lots available to start the auction")
-            self.on_start_auction()
-            self._current_lot = self._lots.pop(0)
-            self._current_bid = Bid(self._current_lot)
-            self._timer_expired = False
-            self._timer = Timer(timeout=self._timeout, callback=self._timer_callback)
-            self._timer.start()
+        if not self._lots:
+            raise ValueError("No lots available to start the auction")
+        if not self._participants:
+            raise ValueError("No participants available to start the auction")
+        self.on_start_auction()
+        self._current_lot = self._lots.pop(0)
+        self._current_bid = Bid(self._current_lot)
+        self._timer = Timer(timeout=self._timeout, callback=self._timer_callback)
+        self._timer.start()
 
     @ensure_state('accepting_bids', 'auction_paused')
     @save
@@ -95,52 +94,46 @@ class TradingPlatform(StateMachine):
         """
         Stops the auction by transitioning to the 'preparing_for_auction' state and processing the current bid.
         """
-        with self._lock:
-            self.on_end_auction()
-            if self._current_bid and self._current_bid.participant:
-                self._current_bid.participant.lots.append(self._current_lot)
-                self._current_bid.participant.balance -= self._current_bid.amount
-                self._sold_lots.append(self._current_lot)
-            else:
-                self._lots.append(self._current_lot)
-            self._current_bid = None
-            self._current_lot = None
-            if self._timer:
-                self._timer.cancel()
+        self.on_end_auction()
+        if self._current_bid and self._current_bid.participant:
+            self._current_bid.participant.lots.append(self._current_lot)
+            self._current_bid.participant.balance -= self._current_bid.amount
+            self._sold_lots.append(self._current_lot)
+        else:
+            self._lots.append(self._current_lot)
+        self._current_bid = None
+        self._current_lot = None
+        if self._timer:
+            self._timer.cancel()
 
     @ensure_state('accepting_bids')
     def pause_auction(self) -> None:
-        with self._lock:
-            self.on_pause_auction()
-            if self._timer:
-                self._timer.cancel()
+        self.on_pause_auction()
+        if self._timer:
+            self._timer.cancel()
 
     @ensure_state('auction_paused')
     def resume_auction(self) -> None:
-        with self._lock:
-            self.on_resume_auction()
-            self._timer = Timer(timeout=self._timeout, callback=self._timer_callback)
-            self._timer.start()
+        self.on_resume_auction()
+        self._timer = Timer(timeout=self._timeout, callback=self._timer_callback)
+        self._timer.start()
 
     @ensure_state('auction_paused')
     def restart_auction(self) -> None:
-        with self._lock:
-            self.on_restart_auction()
-            self._current_bid = Bid(self._current_lot)
-            self._timer_expired = False
-            self._timer = Timer(timeout=self._timeout, callback=self._timer_callback)
-            self._timer.start()
+        self.on_restart_auction()
+        self._current_bid = Bid(self._current_lot)
+        self._timer = Timer(timeout=self._timeout, callback=self._timer_callback)
+        self._timer.start()
 
     @ensure_state('auction_paused')
     @save
     def abort_auction(self) -> None:
-        with self._lock:
-            self.on_abort_auction()
-            self.add(self._current_lot)
-            self._current_bid = None
-            self._current_lot = None
-            if self._timer:
-                self._timer.cancel()
+        self.on_abort_auction()
+        self.add(self._current_lot)
+        self._current_bid = None
+        self._current_lot = None
+        if self._timer:
+            self._timer.cancel()
 
     @ensure_state('preparing_for_auction')
     @save
@@ -151,15 +144,14 @@ class TradingPlatform(StateMachine):
         Args:
             *args (Union[AuctionParticipant, Lot, List[Union[AuctionParticipant, Lot]]]): Participants or lots to add.
         """
-        with self._lock:
-            for arg in args:
-                if isinstance(arg, (AuctionParticipant, Lot)):
-                    self._add_single(arg)
-                elif isinstance(arg, list):
-                    for item in arg:
-                        self._add_single(item)
-                else:
-                    raise TypeError(f"Unsupported type: {type(arg)}. Expected AuctionParticipant, Lot, or List")
+        for arg in args:
+            if isinstance(arg, (AuctionParticipant, Lot)):
+                self._add_single(arg)
+            elif isinstance(arg, list):
+                for item in arg:
+                    self._add_single(item)
+            else:
+                raise TypeError(f"Unsupported type: {type(arg)}. Expected AuctionParticipant, Lot, or List")
 
     def _add_single(self, item: Union[AuctionParticipant, Lot]) -> None:
         """
@@ -188,30 +180,29 @@ class TradingPlatform(StateMachine):
         Args:
             *args (Union[AuctionParticipant, Lot, List[Union[AuctionParticipant, Lot]]]): Participants or lots to remove.
         """
-        with self._lock:
-            for arg in args:
-                if isinstance(arg, (list, tuple, set)):
-                    self.remove(*arg)
-                elif isinstance(arg, AuctionParticipant):
-                    if arg not in self._participants:
-                        raise ValueError(f"Participant '{arg}' not found")
-                    for lot in arg.lots:
-                        if lot in self._sold_lots:
-                            self._sold_lots.remove(lot)
-                    self._participants.remove(arg)
-                elif isinstance(arg, Lot):
-                    if arg not in self._lots:
-                        raise ValueError(f"Lot '{arg}' not found")
-                    self._lots.remove(arg)
-                else:
-                    raise TypeError(f"Unsupported type: {type(arg)}. Expected AuctionParticipant, Lot, or an iterable of these types.")
+        for arg in args:
+            if isinstance(arg, (list, tuple, set)):
+                self.remove(*arg)
+            elif isinstance(arg, AuctionParticipant):
+                if arg not in self._participants:
+                    raise ValueError(f"Participant '{arg}' not found")
+                for lot in arg.lots:
+                    if lot in self._sold_lots:
+                        self._sold_lots.remove(lot)
+                self._participants.remove(arg)
+            elif isinstance(arg, Lot):
+                if arg not in self._lots:
+                    raise ValueError(f"Lot '{arg}' not found")
+                self._lots.remove(arg)
+            else:
+                raise TypeError(
+                    f"Unsupported type: {type(arg)}. Expected AuctionParticipant, Lot, or an iterable of these types.")
 
     @ensure_state('accepting_bids')
     def _timer_callback(self) -> None:
         """
         Callback function for the timer, stops the auction when the timer expires.
         """
-        self._timer_expired = True
         self.end_auction()
 
     @property
@@ -290,30 +281,31 @@ class TradingPlatform(StateMachine):
         return self._current_bid
 
     @ensure_state('accepting_bids')
-    def place_bid(self, participant: AuctionParticipant, amount: float) -> None:
+    def place_bid(self, participant: AuctionParticipant, amount: int) -> None:
         """
         Places a bid on the current lot.
 
         Args:
             participant (AuctionParticipant): The participant placing the bid.
-            amount (float): The bid amount.
+            amount (int): The bid amount.
 
         Raises:
             RuntimeError: If no current bid is available (auction not active).
             ValueError: If the bid amount is not higher than the current bid or exceeds balance.
         """
-        with self._lock:
-            if not self._current_bid:
-                raise RuntimeError("No current bid available. Auction may not be active.")
-            if amount <= self._current_bid.amount:
-                raise ValueError("Bid amount must be greater than the current bid")
-            if amount > participant.balance:
-                raise ValueError("Bid amount exceeds participant balance")
-            self._current_bid.increase_bid(amount, participant)
-            if self._timer:
-                self._timer.cancel()
-            self._timer = Timer(timeout=self._timeout, callback=self.end_auction)
-            self._timer.start()
+        if not self._current_bid:
+            raise RuntimeError("No current bid available. Auction may not be active.")
+        if amount <= self._current_bid.amount:
+            raise ValueError("Bid amount must be greater than the current bid")
+        if amount > participant.balance:
+            raise ValueError("Bid amount exceeds participant balance")
+        if amount < self._current_lot.minimum_bid:
+            raise ValueError("")
+        self._current_bid.increase_bid(amount, participant)
+        if self._timer:
+            self._timer.cancel()
+        self._timer = Timer(timeout=self._timeout, callback=self.end_auction)
+        self._timer.start()
 
     def _save_state(self) -> None:
         """
@@ -367,7 +359,8 @@ class TradingPlatform(StateMachine):
                 loaded_participants.append(participant)
             self._participants = loaded_participants
 
-            AuctionParticipant._participants_counter = max(state_data.get('participants_counter', 0), max_participant_ID + 1)
+            AuctionParticipant._participants_counter = max(state_data.get('participants_counter', 0),
+                                                           max_participant_ID + 1)
 
             Lot._lot_counter = max(state_data.get('lot_counter', 0), max_lot_ID + 1)
             self._timeout = state_data.get('timeout', 60)

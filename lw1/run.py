@@ -1,31 +1,12 @@
 from auction import *
 
 
-def _get_positive_float(prompt):
-    try:
-        value = input(prompt)
-        if not value:
-            return 0
-        value = float(value)
-        if value >= 0:
-            return value
-        else:
-            print(f'INVALID INPUT: {value} is not a positive number.')
-
-    except ValueError:
-        print("INVALID INPUT.")
-    return -1
-
-def _get_positive_int(prompt):
-    try:
-        value = int(input(prompt))
-        if value >= 0:
-            return value
-        else:
-            print(f'INVALID INPUT: {value} is not a positive number.')
-    except ValueError:
-        print('INVALID INPUT.')
-    return -1
+def get_positive_int(prompt):
+    value = int(input(prompt))
+    if value >= 0:
+        return value
+    else:
+        raise ValueError('Value must be positive')
 
 
 class MainMenu:
@@ -71,15 +52,19 @@ class MainMenu:
 
     def _add_participant(self):
         nickname = input('Enter the participant`s nickname (default: anonymous_<ID>): ')
-        balance = _get_positive_float('Enter the participant`s balance (default: 0): ')
-        if balance == -1:
+        try:
+            balance = get_positive_int('Enter the participant`s balance (default: 0): ')
+        except ValueError as e:
+            print(e)
             return
         participant = AuctionParticipant(nickname=nickname, balance=balance)
         self._auction.add(participant)
 
     def _del_participant(self):
-        ID = _get_positive_int('Enter the participant`s ID to delete: ')
-        if ID == -1:
+        try:
+            ID = get_positive_int('Enter the participant`s ID to delete: ')
+        except ValueError as e:
+            print(e)
             return
         participant = next((p for p in self._auction.participants if p.participant_id == ID), None)
         if participant:
@@ -93,15 +78,21 @@ class MainMenu:
             print("Lot name cannot be empty.")
             return
         description = input('Enter the description of the lot (default: None): ')
-        minimum_bid = _get_positive_float('Enter the minimum_bid of the lot (default: 0): ')
+        try:
+            minimum_bid = get_positive_int('Enter the minimum_bid of the lot (default: 0): ')
+        except ValueError as e:
+            print(e)
+            return
         if minimum_bid == -1:
             return
         lot = Lot(name=name, description=description, minimum_bid=minimum_bid)
         self._auction.add(lot)
 
     def _del_lot(self):
-        ID = _get_positive_int('Enter the lot ID to delete: ')
-        if ID == -1:
+        try:
+            ID = get_positive_int('Enter the lot ID to delete: ')
+        except ValueError as e:
+            print(e)
             return
         lot = next((l for l in self._auction.lots if l.lot_id == ID), None)
         if lot:
@@ -110,71 +101,87 @@ class MainMenu:
             print(f"Lot with ID {ID} not found.")
 
     def _change_timeout(self):
-        new_timeout = _get_positive_int('Enter the new timeout in seconds: ')
-        if new_timeout == -1:
+        try:
+            new_timeout = get_positive_int('Enter the new timeout in seconds: ')
+        except ValueError as e:
+            print(e)
             return
+        if new_timeout > 10000:
+            print(f"Timeout cannot be greater than 10000.")
         self._auction.timeout = new_timeout
 
     def _participants_info(self):
+        if len(self._auction.participants) == 0:
+            print("No participants found.")
+            return
         for i in self._auction.participants:
             print(i)
 
     def _lots_info(self):
+        if len(self._auction.lots) == 0:
+            print("No lots found.")
+            return
         for i in self._auction.lots:
             print(i)
 
-    def _check_timer(self):
-        if self._auction._timer_expired:
-            print("Timer expired. Auction stopped.")
-            return True
-        return False
-
     def _accepting_bids_menu(self):
+
         print(f"Current lot: {self._auction.current_lot}")
-        while self._auction.state in ['accepting_bids', 'auction_paused']:
-            if self._check_timer():
-                break
 
-            ID = _get_positive_int('Enter the ID of the participant who want to increase the bid: ')
-            participant = next((p for p in self._auction.participants if p.participant_id == ID), None)
-            if not participant:
-                print(f"Participant with ID {ID} not found.")
+        print('Participants info:')
+        self._participants_info()
 
-            if self._check_timer():
-                break
+        try:
+            while True:
+                try:
+                    ID = get_positive_int('Enter the ID of the participant who want to increase the bid: ')
+                except ValueError as e:
+                    print(e)
+                    return
 
-            bid = _get_positive_float('Enter the desired bid: ')
-            if bid == -1:
-                continue
+                participant = next((p for p in self._auction.participants if p.participant_id == ID), None)
+                if not participant:
+                    print(f"Participant with ID {ID} not found.")
+                    continue
 
-            try:
-                self._auction.place_bid(participant, bid)
-            except ValueError as e:
-                print(e)
+                try:
+                    bid = get_positive_int('Enter the desired bid: ')
+                except ValueError as e:
+                    print(e)
+                    return
 
-            if self._check_timer():
-                break
+                if bid == -1:
+                    continue
 
-            user_choice = input('Choose an action: (c)ontinue bidding, (p)ause auction, (e)nd auction: ').lower()
-            if user_choice == 'c':
-                pass
-            elif user_choice == 'p':
-                self._auction.pause_auction()
+                try:
+                    self._auction.place_bid(participant, bid)
+                except ValueError as e:
+                    print(e)
 
-                user_choice = input('Choose an action: (c)ontinue auction, (r)estart auction, (a)bort auction, (e)nd auction: ').lower()
+                user_choice = input('Choose an action: (c)ontinue bidding, (p)ause auction, (e)nd auction: ').lower()
+
                 if user_choice == 'c':
-                    self._auction.resume_auction()
-                elif user_choice == 'r':
-                    self._auction.restart_auction()
-                elif user_choice == 'a':
-                    self._auction.abort_auction()
-                    break
+                    continue
+                elif user_choice == 'p':
+                    self._auction.pause_auction()
+
+                    user_choice = input(
+                        'Choose an action: (c)ontinue auction, (r)estart auction, (a)bort auction, (e)nd auction: ').lower()
+                    if user_choice == 'c':
+                        self._auction.resume_auction()
+                    elif user_choice == 'r':
+                        self._auction.restart_auction()
+                    elif user_choice == 'a':
+                        self._auction.abort_auction()
+                        break
+                    else:
+                        self._auction.end_auction()
+                        break
                 else:
                     self._auction.end_auction()
                     break
-            else:
-                self._auction.end_auction()
-                break
+        except RuntimeError:
+            print('Timer expired. Auction stopped!')
 
     def start(self):
         self._preparing_for_auction_menu()

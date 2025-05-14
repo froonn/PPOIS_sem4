@@ -9,7 +9,7 @@ class Lot:
     """
     _lot_counter = 0
 
-    def __init__(self, name: str = None, description: str = None, minimum_bid: float = 0):
+    def __init__(self, name: str = None, description: str = None, minimum_bid: int = 0):
         """
         Initializes a new Lot instance.
 
@@ -18,6 +18,8 @@ class Lot:
             description (str, optional): The description of the lot. Defaults to None.
             minimum_bid (float, optional): The minimum bid for the lot. Defaults to 0.
         """
+        if minimum_bid < 0:
+            raise ValueError('Minimum bid must be non-negative.')
         self._name = name
         self._description = description
         self._minimum_bid = minimum_bid
@@ -73,12 +75,12 @@ class Lot:
         return self._description
 
     @property
-    def minimum_bid(self) -> float:
+    def minimum_bid(self) -> int:
         """
         Returns the minimum bid for the lot.
 
         Returns:
-            float: The minimum bid for the lot.
+            int: The minimum bid for the lot.
         """
         return self._minimum_bid
 

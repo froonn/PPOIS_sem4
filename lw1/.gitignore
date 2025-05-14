@@ -244,3 +244,4 @@ cython_debug/
 !/test.ipynb
 !/tests/auction_state.json
 !/auction_state.json
+!/README_tmp.md
