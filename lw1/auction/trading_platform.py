@@ -64,6 +64,7 @@ class TradingPlatform(StateMachine):
         self._sold_lots = []
         self._current_bid = None
         self._current_lot = None
+        self._winner = None
         self._timer = None
         self._timeout = 60
         self._lock = threading.Lock()
@@ -98,8 +99,10 @@ class TradingPlatform(StateMachine):
             self._current_bid.participant.lots.append(self._current_lot)
             self._current_bid.participant.balance -= self._current_bid.amount
             self._sold_lots.append(self._current_lot)
+            self._winner = self._current_bid.participant
         else:
             self._lots.append(self._current_lot)
+            self._winner = None
         self._current_bid = None
         self._current_lot = None
         if self._timer:
@@ -278,6 +281,17 @@ class TradingPlatform(StateMachine):
             Bid: The current bid in the auction.
         """
         return self._current_bid
+
+    @property
+    @ensure_state('preparing_for_auction')
+    def winner(self) -> AuctionParticipant:
+        """
+        Returns the winner of the last auction.
+
+        Returns:
+            AuctionParticipant: The winner of the last auction.
+        """
+        return self._winner
 
     @ensure_state('accepting_bids')
     def place_bid(self, participant: AuctionParticipant, amount: int) -> None:

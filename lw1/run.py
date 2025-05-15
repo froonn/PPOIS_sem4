@@ -130,6 +130,7 @@ class MainMenu:
 
         print('Participants info:')
         self._participants_info()
+        winner = None
 
         try:
             while True:
@@ -175,13 +176,17 @@ class MainMenu:
                         self._auction.abort_auction()
                         break
                     else:
-                        self._auction.end_auction()
+                        winner = self._auction.end_auction()
                         break
                 else:
-                    self._auction.end_auction()
+                    winner = self._auction.end_auction()
                     break
         except RuntimeError:
-            print('Timer expired. Auction stopped!')
+            print('Timer expired. Auction ended!')
+        if self._auction.winner:
+            print(f"Winner: {self._auction.winner.nickname}")
+        else:
+            print("Auction ended without a winner.")
 
     def start(self):
         self._preparing_for_auction_menu()

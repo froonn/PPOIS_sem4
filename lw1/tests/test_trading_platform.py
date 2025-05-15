@@ -12,7 +12,8 @@ class TestTradingPlatform(unittest.TestCase):
     def test_start_auction_initializes_first_lot_and_bid(self):
         platform = TradingPlatform()
         lot = Lot(name="Painting", description="A beautiful painting", minimum_bid=100.0)
-        platform.add(lot)
+        participant = AuctionParticipant(nickname="Alice", balance=200.0)
+        platform.add(lot, participant)
         platform.timeout = 0.1
         platform.start_auction()
         self.assertEqual(platform.current_lot, lot)
@@ -34,7 +35,8 @@ class TestTradingPlatform(unittest.TestCase):
     def test_pause_auction_stops_timer(self):
         platform = TradingPlatform()
         lot = Lot(name="Painting", description="A beautiful painting", minimum_bid=100.0)
-        platform.add(lot)
+        participant = AuctionParticipant(nickname="Alice", balance=200.0)
+        platform.add(lot, participant)
         platform.timeout = 0.1
         platform.start_auction()
         platform.pause_auction()
@@ -43,7 +45,8 @@ class TestTradingPlatform(unittest.TestCase):
     def test_resume_auction_restarts_timer(self):
         platform = TradingPlatform()
         lot = Lot(name="Painting", description="A beautiful painting", minimum_bid=100.0)
-        platform.add(lot)
+        participant = AuctionParticipant(nickname="Alice", balance=200.0)
+        platform.add(lot,participant)
         platform.timeout = 0.1
         platform.start_auction()
         platform.pause_auction()
@@ -53,7 +56,8 @@ class TestTradingPlatform(unittest.TestCase):
     def test_restart_auction_resets_current_bid(self):
         platform = TradingPlatform()
         lot = Lot(name="Painting", description="A beautiful painting", minimum_bid=100.0)
-        platform.add(lot)
+        participant = AuctionParticipant(nickname="Alice", balance=200.0)
+        platform.add(lot, participant)
         platform.timeout = 0.1
         platform.start_auction()
         platform.pause_auction()
@@ -63,7 +67,8 @@ class TestTradingPlatform(unittest.TestCase):
     def test_resume_auction_resets_current_lot_and_bid(self):
         platform = TradingPlatform()
         lot = Lot(name="Painting", description="A beautiful painting", minimum_bid=100.0)
-        platform.add(lot)
+        participant = AuctionParticipant(nickname="Alice", balance=200.0)
+        platform.add(lot, participant)
         platform.timeout = 0.1
         platform.start_auction()
         platform.pause_auction()
