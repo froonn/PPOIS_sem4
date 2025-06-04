@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from utils.constants import COLUMN_HEADERS_MAP
+from .pagination_model import PaginationModel # Import the new model
 
 
 class MainView(tk.Tk):
@@ -14,13 +15,7 @@ class MainView(tk.Tk):
         self.title("Teacher Data Management")
         self.geometry("900x600")
 
-        self.records_per_page_options = [10, 20, 50]
-        self.records_per_page = tk.IntVar(value=self.records_per_page_options[0])
-        self.current_page = 1
-        self.total_pages = 1
-
-        self.sort_column = "id"  # Default sort column
-        self.sort_order = "asc"  # Default sort order
+        self.pagination_model = PaginationModel() # Create an instance of the pagination model
 
         self.create_menu()
         self.create_toolbar()
@@ -98,9 +93,11 @@ class MainView(tk.Tk):
         self.last_page_btn.pack(side=tk.LEFT, padx=2)
 
         tk.Label(pagination_frame, text="Records per page:").pack(side=tk.LEFT, padx=5)
-        self.records_per_page_menu = ttk.OptionMenu(pagination_frame, self.records_per_page,
-                                                    self.records_per_page.get(),
-                                                    *self.records_per_page_options,
+        self.records_per_page_var = tk.StringVar(self)
+        self.records_per_page_var.set(str(self.pagination_model.records_per_page))
+        self.records_per_page_menu = ttk.OptionMenu(pagination_frame, self.records_per_page_var,
+                                                    self.records_per_page_var.get(),
+                                                    *map(str, self.pagination_model.records_per_page_options),
                                                     command=self.on_records_per_page_change)
         self.records_per_page_menu.pack(side=tk.LEFT, padx=2)
 
@@ -116,29 +113,23 @@ class MainView(tk.Tk):
     def _sort_column(self, col):
         """
         Sorts the Treeview content by the specified column.
-        Toggles between ascending and descending order.
         """
-        if self.sort_column:
-            old_header_text = COLUMN_HEADERS_MAP.get(self.sort_column, self.sort_column)
-            self.tree.heading(self.sort_column, text=old_header_text)
+        # Reset header text for the previously sorted column
+        if self.pagination_model.sort_column:
+            old_header_text = COLUMN_HEADERS_MAP.get(self.pagination_model.sort_column, self.pagination_model.sort_column)
+            self.tree.heading(self.pagination_model.sort_column, text=old_header_text)
 
-        if self.sort_column == col:
-            self.sort_order = "desc" if self.sort_order == "asc" else "asc"
-        else:
-            self.sort_column = col
-            self.sort_order = "asc"  # Default to ascending when changing column
+        self.pagination_model.toggle_sort_order(col) # Use the model's method to toggle sort
 
-        arrow = " ▲" if self.sort_order == "asc" else " ▼"
-        new_header_text = COLUMN_HEADERS_MAP.get(self.sort_column, self.sort_column) + arrow
-        self.tree.heading(self.sort_column, text=new_header_text)
+        arrow = " ▲" if self.pagination_model.sort_order == "asc" else " ▼"
+        new_header_text = COLUMN_HEADERS_MAP.get(self.pagination_model.sort_column, self.pagination_model.sort_column) + arrow
+        self.tree.heading(self.pagination_model.sort_column, text=new_header_text)
 
-        self.current_page = 1  # Reset to first page after sorting
         self.update_record_display()
 
     def update_record_display(self, records=None):
         """
         Updates the display of records in the table.
-        :param records: List of records to display. If None, records will be retrieved from the controller.
         """
         current_selection_ids = self.tree.selection()
         if current_selection_ids:
@@ -151,78 +142,71 @@ class MainView(tk.Tk):
 
         if records is None:
             total_records = self.controller.get_total_records()
-            self.total_pages = (total_records + self.records_per_page.get() - 1) // self.records_per_page.get()
-            if self.total_pages == 0:
-                self.total_pages = 1
+            self.pagination_model.set_total_records(total_records)
 
-            if self.current_page > self.total_pages:
-                self.current_page = self.total_pages
-            if self.current_page < 1:
-                self.current_page = 1
-
-            offset = (self.current_page - 1) * self.records_per_page.get()
+            offset = (self.pagination_model.current_page - 1) * self.pagination_model.records_per_page
             records = self.controller.get_paginated_and_sorted_records(
-                offset, self.records_per_page.get(), self.sort_column, self.sort_order
+                offset, self.pagination_model.records_per_page, self.pagination_model.sort_column, self.pagination_model.sort_order
             )
         else:
-            total_records = len(records)
-            self.total_pages = 1
-            self.current_page = 1
+            # If records are passed directly (e.g., from search), pagination is not applied
+            self.pagination_model.set_total_records(len(records))
+            self.pagination_model.current_page = 1 # Reset page as this is not a paginated set
+            self.pagination_model.sort_column = "id" # Reset sort
+            self.pagination_model.sort_order = "asc"
 
         for record in records:
             self.tree.insert("", "end", values=record)
 
-        self.page_info_label.config(text=f"Page {self.current_page} of {self.total_pages} ({total_records} records)")
+        self.page_info_label.config(text=f"Page {self.pagination_model.current_page} of {self.pagination_model.total_pages} ({self.pagination_model.total_records} records)")
         self.update_pagination_buttons()
 
-        arrow = " ▲" if self.sort_order == "asc" else " ▼"
-        current_header_text = COLUMN_HEADERS_MAP.get(self.sort_column, self.sort_column) + arrow
-        self.tree.heading(self.sort_column, text=current_header_text)
+        arrow = " ▲" if self.pagination_model.sort_order == "asc" else " ▼"
+        current_header_text = COLUMN_HEADERS_MAP.get(self.pagination_model.sort_column, self.pagination_model.sort_column) + arrow
+        self.tree.heading(self.pagination_model.sort_column, text=current_header_text)
+
 
     def update_pagination_buttons(self):
         """Updates the state of pagination buttons."""
-        self.first_page_btn.config(state=tk.NORMAL if self.current_page > 1 else tk.DISABLED)
-        self.prev_page_btn.config(state=tk.NORMAL if self.current_page > 1 else tk.DISABLED)
-        self.next_page_btn.config(state=tk.NORMAL if self.current_page < self.total_pages else tk.DISABLED)
-        self.last_page_btn.config(state=tk.NORMAL if self.current_page < self.total_pages else tk.DISABLED)
+        self.first_page_btn.config(state=tk.NORMAL if self.pagination_model.current_page > 1 else tk.DISABLED)
+        self.prev_page_btn.config(state=tk.NORMAL if self.pagination_model.current_page > 1 else tk.DISABLED)
+        self.next_page_btn.config(state=tk.NORMAL if self.pagination_model.current_page < self.pagination_model.total_pages else tk.DISABLED)
+        self.last_page_btn.config(state=tk.NORMAL if self.pagination_model.current_page < self.pagination_model.total_pages else tk.DISABLED)
 
     def go_to_first_page(self):
         """Goes to the first page."""
-        self.current_page = 1
+        self.pagination_model.go_to_first_page()
         self.update_record_display()
 
     def go_to_prev_page(self):
         """Goes to the previous page."""
-        if self.current_page > 1:
-            self.current_page -= 1
-            self.update_record_display()
+        self.pagination_model.go_to_prev_page()
+        self.update_record_display()
 
     def go_to_next_page(self):
         """Goes to the next page."""
-        if self.current_page < self.total_pages:
-            self.current_page += 1
-            self.update_record_display()
+        self.pagination_model.go_to_next_page()
+        self.update_record_display()
 
     def go_to_last_page(self):
         """Goes to the last page."""
-        self.current_page = self.total_pages
+        self.pagination_model.go_to_last_page()
         self.update_record_display()
 
     def on_records_per_page_change(self, value):
         """Handles changing the number of records per page."""
-        self.records_per_page.set(int(value))
-        self.current_page = 1  # Reset to the first page when changing records per page
+        self.pagination_model.records_per_page = int(value)
         self.update_record_display()
 
     def jump_to_page(self, event=None):
         """Jumps to a specific page number entered by the user."""
         try:
             page_num = int(self.page_jump_entry.get())
-            if 1 <= page_num <= self.total_pages:
-                self.current_page = page_num
+            if 1 <= page_num <= self.pagination_model.total_pages:
+                self.pagination_model.jump_to_page(page_num)
                 self.update_record_display()
             else:
-                messagebox.showwarning("Invalid Page", f"Please enter a page number between 1 and {self.total_pages}.",
+                messagebox.showwarning("Invalid Page", f"Please enter a page number between 1 and {self.pagination_model.total_pages}.",
                                        parent=self)
         except ValueError:
             messagebox.showerror("Invalid Input", "Please enter a valid number for the page.", parent=self)

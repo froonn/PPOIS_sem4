@@ -1,29 +1,31 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from utils.constants import COLUMN_HEADERS_MAP
+from .pagination_model import PaginationModel # Import the new model
 
 
 class DeleteDialog(tk.Toplevel):
     """
-    Dialog window for deleting records.
+    Dialog window for deleting records with pagination.
+    Uses PaginationModel to manage pagination and sorting.
     """
 
     def __init__(self, parent, controller):
         super().__init__(parent)
         self.controller = controller
         self.title("Delete Records")
-        self.geometry("600x550")  # Slightly taller to accommodate delete button
+        self.geometry("900x650")  # Increased size to accommodate pagination elements
         self.transient(parent)
         self.grab_set()
 
-        self.sort_column = "id"  # Default sort column for delete results
-        self.sort_order = "asc"  # Default sort order for delete results
-        self.records_to_delete = []  # Store raw search results for deletion
+        self.pagination_model = PaginationModel() # Create an instance of the pagination model
+        self.records_to_delete = []  # Store all found results for deletion
+        self.current_delete_conditions = {} # Store conditions for actual deletion
 
         self.create_widgets()
 
     def create_widgets(self):
-        """Creates input elements for deletion conditions and a table for results."""
+        """Creates input elements for deletion conditions, a table for results, and pagination controls."""
         delete_frame = tk.LabelFrame(self, text="Deletion Conditions")
         delete_frame.pack(padx=10, pady=10, fill=tk.X)
 
@@ -32,7 +34,7 @@ class DeleteDialog(tk.Toplevel):
         self.full_name_entry.grid(row=0, column=1, padx=5, pady=2, sticky="ew")
 
         tk.Label(delete_frame, text="Department Name (or part):").grid(row=1, column=0, padx=5, pady=2, sticky="w")
-        self.department_entry = tk.Entry(delete_frame)  # Changed to Entry
+        self.department_entry = tk.Entry(delete_frame)
         self.department_entry.grid(row=1, column=1, padx=5, pady=2, sticky="ew")
 
         tk.Label(delete_frame, text="Academic Rank:").grid(row=2, column=0, padx=5, pady=2, sticky="w")
@@ -43,7 +45,7 @@ class DeleteDialog(tk.Toplevel):
         self.academic_rank_combobox.grid(row=2, column=1, padx=5, pady=2, sticky="ew")
         self.academic_rank_combobox.set("")
 
-        tk.Label(delete_frame, text="Academic Degree:").grid(row=3, column=0, padx=5, pady=2, sticky="w")  # New field
+        tk.Label(delete_frame, text="Academic Degree:").grid(row=3, column=0, padx=5, pady=2, sticky="w")
         self.academic_degree_options = [""] + self.controller.get_unique_values('academic_degree')
         self.academic_degree_var = tk.StringVar(self)
         self.academic_degree_combobox = ttk.Combobox(delete_frame, textvariable=self.academic_degree_var,
@@ -76,7 +78,7 @@ class DeleteDialog(tk.Toplevel):
                                command=self.perform_search_for_deletion)
         search_btn.pack(side=tk.LEFT, padx=5)
 
-        self.delete_btn = tk.Button(action_button_frame, text="Delete Selected Records", command=self.confirm_delete,
+        self.delete_btn = tk.Button(action_button_frame, text="Delete All Found Records", command=self.confirm_delete,
                                     state=tk.DISABLED)
         self.delete_btn.pack(side=tk.LEFT, padx=5)
 
@@ -98,40 +100,78 @@ class DeleteDialog(tk.Toplevel):
 
         self.delete_tree.pack(fill=tk.BOTH, expand=True)
 
+        # Pagination controls for deletion results
+        pagination_frame = tk.Frame(self)
+        pagination_frame.pack(pady=5)
+
+        self.first_page_btn = tk.Button(pagination_frame, text="<<", command=self.go_to_first_page)
+        self.first_page_btn.pack(side=tk.LEFT, padx=2)
+
+        self.prev_page_btn = tk.Button(pagination_frame, text="<", command=self.go_to_prev_page)
+        self.prev_page_btn.pack(side=tk.LEFT, padx=2)
+
+        self.page_info_label = tk.Label(pagination_frame, text="Page X of Y (Z records)")
+        self.page_info_label.pack(side=tk.LEFT, padx=5)
+
+        self.next_page_btn = tk.Button(pagination_frame, text=">", command=self.go_to_next_page)
+        self.next_page_btn.pack(side=tk.LEFT, padx=2)
+
+        self.last_page_btn = tk.Button(pagination_frame, text=">>", command=self.go_to_last_page)
+        self.last_page_btn.pack(side=tk.LEFT, padx=2)
+
+        tk.Label(pagination_frame, text="Records per page:").pack(side=tk.LEFT, padx=5)
+        self.records_per_page_var = tk.StringVar(self)
+        self.records_per_page_var.set(str(self.pagination_model.records_per_page))
+        self.records_per_page_menu = ttk.OptionMenu(pagination_frame, self.records_per_page_var,
+                                                    self.records_per_page_var.get(),
+                                                    *map(str, self.pagination_model.records_per_page_options),
+                                                    command=self.on_records_per_page_change)
+        self.records_per_page_menu.pack(side=tk.LEFT, padx=2)
+
+        jump_page_frame = tk.Frame(self)
+        jump_page_frame.pack(pady=5)
+        tk.Label(jump_page_frame, text="Go to page:").pack(side=tk.LEFT, padx=5)
+        self.page_jump_entry = tk.Entry(jump_page_frame, width=5)
+        self.page_jump_entry.pack(side=tk.LEFT, padx=2)
+        self.page_jump_entry.bind("<Return>", self.jump_to_page)  # Bind Enter key
+        self.page_jump_button = tk.Button(jump_page_frame, text="Go", command=self.jump_to_page)
+        self.page_jump_button.pack(side=tk.LEFT, padx=2)
+
+        # Initially disable pagination buttons
+        self.update_pagination_buttons()
+
+
     def _sort_column(self, col):
         """
-        Sorts the delete results Treeview content by the specified column.
+        Sorts the deletion results Treeview content by the specified column.
         Toggles between ascending and descending order.
         """
-        if self.sort_column:
-            old_header_text = COLUMN_HEADERS_MAP.get(self.sort_column, self.sort_column)
-            self.delete_tree.heading(self.sort_column, text=old_header_text)
+        # Reset header text for the previously sorted column
+        if self.pagination_model.sort_column:
+            old_header_text = COLUMN_HEADERS_MAP.get(self.pagination_model.sort_column, self.pagination_model.sort_column)
+            self.delete_tree.heading(self.pagination_model.sort_column, text=old_header_text)
 
-        if self.sort_column == col:
-            self.sort_order = "desc" if self.sort_order == "asc" else "asc"
-        else:
-            self.sort_column = col
-            self.sort_order = "asc"  # Default to ascending when changing column
+        self.pagination_model.toggle_sort_order(col) # Use the model's method to toggle sort
 
-        arrow = " ▲" if self.sort_order == "asc" else " ▼"
-        new_header_text = COLUMN_HEADERS_MAP.get(self.sort_column, self.sort_column) + arrow
-        self.delete_tree.heading(self.sort_column, text=new_header_text)
+        arrow = " ▲" if self.pagination_model.sort_order == "asc" else " ▼"
+        new_header_text = COLUMN_HEADERS_MAP.get(self.pagination_model.sort_column, self.pagination_model.sort_column) + arrow
+        self.delete_tree.heading(self.pagination_model.sort_column, text=new_header_text)
 
-        self.display_delete_results(self.records_to_delete)  # Re-display sorted data
+        self.display_paginated_results()
 
     def perform_search_for_deletion(self):
         """
-        Collects deletion conditions, performs a search, and displays results.
+        Collects deletion conditions, performs a search, and displays paginated results.
         Enables the delete button if records are found.
         """
         conditions = {}
         if self.full_name_entry.get():
             conditions['full_name'] = self.full_name_entry.get()
-        if self.department_entry.get():  # Get value from Entry
+        if self.department_entry.get():
             conditions['department'] = self.department_entry.get()
         if self.academic_rank_var.get():
             conditions['academic_rank'] = self.academic_rank_var.get()
-        if self.academic_degree_var.get():  # Get value from new combobox
+        if self.academic_degree_var.get():
             conditions['academic_degree'] = self.academic_degree_var.get()
         if self.faculty_var.get():
             conditions['faculty'] = self.faculty_var.get()
@@ -150,7 +190,8 @@ class DeleteDialog(tk.Toplevel):
             self.delete_btn.config(state=tk.DISABLED)
             return
 
-        self.records_to_delete = self.controller.search_records(conditions)  # Get raw results
+        self.records_to_delete = self.controller.search_records(conditions)  # Get all raw results
+        self.current_delete_conditions = conditions # Store conditions for actual deletion
 
         if self.records_to_delete:
             messagebox.showinfo("Search Complete",
@@ -161,40 +202,34 @@ class DeleteDialog(tk.Toplevel):
             messagebox.showinfo("Search Complete", "No records found matching the conditions.", parent=self)
             self.delete_btn.config(state=tk.DISABLED)  # Disable delete button
 
-        self.current_delete_conditions = conditions
+        self.pagination_model.set_total_records(len(self.records_to_delete))
+        self.pagination_model.current_page = 1 # Reset to first page for new search results
+        self.pagination_model.sort_column = "id" # Reset sort column
+        self.pagination_model.sort_order = "asc" # Reset sort order
+        self.display_paginated_results()
 
-        self.sort_column = "id"
-        self.sort_order = "asc"
-        self.display_delete_results(self.records_to_delete)
-
-    def display_delete_results(self, records):
-        """Displays records found for deletion in the table, applying current sort order."""
+    def display_paginated_results(self):
+        """Displays records found for deletion in the table, applying current sort order and pagination."""
         for i in self.delete_tree.get_children():
             self.delete_tree.delete(i)
 
-        column_names = list(COLUMN_HEADERS_MAP.keys())
-        try:
-            sort_index = column_names.index(self.sort_column)
-        except ValueError:
-            sort_index = 0  # Fallback to 'id'
+        paginated_records = self.pagination_model.get_paginated_and_sorted_data(
+            self.records_to_delete, COLUMN_HEADERS_MAP
+        )
 
-        reverse_sort = (self.sort_order == "desc")
-
-        if self.sort_column in ["id", "experience"]:
-            sorted_records = sorted(records, key=lambda x: int(x[sort_index]), reverse=reverse_sort)
-        else:
-            sorted_records = sorted(records, key=lambda x: str(x[sort_index]).lower(), reverse=reverse_sort)
-
-        for record in sorted_records:
+        for record in paginated_records:
             self.delete_tree.insert("", "end", values=record)
 
-        arrow = " ▲" if self.sort_order == "asc" else " ▼"
-        current_header_text = COLUMN_HEADERS_MAP.get(self.sort_column, self.sort_column) + arrow
-        self.delete_tree.heading(self.sort_column, text=current_header_text)
+        self.page_info_label.config(text=f"Page {self.pagination_model.current_page} of {self.pagination_model.total_pages} ({self.pagination_model.total_records} records)")
+        self.update_pagination_buttons()
+
+        arrow = " ▲" if self.pagination_model.sort_order == "asc" else " ▼"
+        current_header_text = COLUMN_HEADERS_MAP.get(self.pagination_model.sort_column, self.pagination_model.sort_column) + arrow
+        self.delete_tree.heading(self.pagination_model.sort_column, text=current_header_text)
 
     def confirm_delete(self):
         """Confirms deletion and calls the controller to delete records."""
-        if not hasattr(self, 'current_delete_conditions') or not self.current_delete_conditions:
+        if not self.current_delete_conditions:
             messagebox.showwarning("Warning", "No search conditions defined for deletion.", parent=self)
             return
 
@@ -210,9 +245,57 @@ class DeleteDialog(tk.Toplevel):
             deleted_count = self.controller.delete_records(self.current_delete_conditions)
             if deleted_count > 0:
                 messagebox.showinfo("Deletion Complete", f"Deleted records: {deleted_count}", parent=self)
-                self.records_to_delete = []  # Clear displayed records
-                self.display_delete_results([])  # Clear treeview
+                self.records_to_delete = []  # Clear stored records
+                self.current_delete_conditions = {} # Clear conditions
+                self.pagination_model.set_total_records(0) # Reset total records in pagination model
+                self.display_paginated_results()  # Refresh the display (will show empty if no records)
                 self.delete_btn.config(state=tk.DISABLED)
             else:
                 messagebox.showinfo("Deletion Complete", "No records were deleted.", parent=self)
-            self.destroy()
+            self.destroy() # Close the dialog after deletion attempt
+
+    def update_pagination_buttons(self):
+        """Updates the state of pagination buttons."""
+        self.first_page_btn.config(state=tk.NORMAL if self.pagination_model.current_page > 1 else tk.DISABLED)
+        self.prev_page_btn.config(state=tk.NORMAL if self.pagination_model.current_page > 1 else tk.DISABLED)
+        self.next_page_btn.config(state=tk.NORMAL if self.pagination_model.current_page < self.pagination_model.total_pages else tk.DISABLED)
+        self.last_page_btn.config(state=tk.NORMAL if self.pagination_model.current_page < self.pagination_model.total_pages else tk.DISABLED)
+
+    def go_to_first_page(self):
+        """Goes to the first page."""
+        self.pagination_model.go_to_first_page()
+        self.display_paginated_results()
+
+    def go_to_prev_page(self):
+        """Goes to the previous page."""
+        self.pagination_model.go_to_prev_page()
+        self.display_paginated_results()
+
+    def go_to_next_page(self):
+        """Goes to the next page."""
+        self.pagination_model.go_to_next_page()
+        self.display_paginated_results()
+
+    def go_to_last_page(self):
+        """Goes to the last page."""
+        self.pagination_model.go_to_last_page()
+        self.display_paginated_results()
+
+    def on_records_per_page_change(self, value):
+        """Handles changing the number of records per page."""
+        self.pagination_model.records_per_page = int(value)
+        self.display_paginated_results()
+
+    def jump_to_page(self, event=None):
+        """Jumps to a specific page number entered by the user."""
+        try:
+            page_num = int(self.page_jump_entry.get())
+            if 1 <= page_num <= self.pagination_model.total_pages:
+                self.pagination_model.jump_to_page(page_num)
+                self.display_paginated_results()
+            else:
+                messagebox.showwarning("Invalid Page", f"Please enter a page number between 1 and {self.pagination_model.total_pages}.",
+                                       parent=self)
+        except ValueError:
+            messagebox.showerror("Invalid Input", "Please enter a valid number for the page.", parent=self)
+        self.page_jump_entry.delete(0, tk.END)  # Clear the entry after attempt
