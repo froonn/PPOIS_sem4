@@ -1,5 +1,5 @@
-from controller import Controller
-from config_manager import load_config
+from controllers.controller import Controller
+from utils.config_manager import load_config
 from tkinter import messagebox
 
 if __name__ == "__main__":

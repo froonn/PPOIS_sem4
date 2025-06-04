@@ -1,7 +1,7 @@
 import json
 import os
 
-from constants import CONFIG_FILE, DEFAULT_DB_NAME
+from .constants import CONFIG_FILE, DEFAULT_DB_NAME
 
 
 def _get_config_path():

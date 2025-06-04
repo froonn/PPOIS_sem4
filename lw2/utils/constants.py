@@ -1,8 +1,8 @@
-ACADEMIC_RANKS = ['Профессор', 'Доцент', 'Старший преподаватель', 'Ассистент']
-ACADEMIC_DEGREES = ['Доктор наук', 'Кандидат наук', 'Без ученой степени']
+ACADEMIC_RANKS = ['Professor', 'Associate Professor', 'Senior Lecturer', 'Assistant']
+ACADEMIC_DEGREES = ['Doctor of Sciences', 'Candidate of Sciences', 'No Academic Degree']
 FACULTIES = ['ФИТиУ', 'ФКСиС', 'ФИБ', 'ФКП', 'ФРЭ']
 
-CONFIG_FILE = "app_config.json"
+CONFIG_FILE = "../app_config.json"
 DEFAULT_DB_NAME = "teachers.db"
 
 COLUMN_HEADERS_MAP = {

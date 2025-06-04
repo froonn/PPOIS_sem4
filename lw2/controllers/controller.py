@@ -1,10 +1,14 @@
 import os
-from model import DatabaseModel
-from view import MainView, AddRecordDialog, SearchDialog, DeleteDialog
+from models.model import DatabaseModel
+from views.main_view import MainView
+from views.add_record_dialog import AddRecordDialog
+from views.search_dialog import SearchDialog
+from views.delete_dialog import DeleteDialog
+from views.tree_view_dialog import TreeViewDialog
 from tkinter import messagebox, filedialog
-from constants import COLUMN_HEADERS_MAP
-from config_manager import get_db_name, set_db_name
-from xml_handler import XMLWriter, XMLReader
+from utils.constants import COLUMN_HEADERS_MAP
+from utils.config_manager import get_db_name, set_db_name
+from utils.xml_handler import XMLWriter, XMLReader
 
 
 class Controller:
@@ -236,3 +240,15 @@ class Controller:
                                         parent=self.view)
             except Exception as e:
                 messagebox.showerror("Import Error", f"Failed to import records from XML: {e}", parent=self.view)
+
+    def open_tree_view(self):
+        """Opens a window with a hierarchical view of the data."""
+        if self.model:
+            records = self.model.get_all_records()
+            if records:
+                TreeViewDialog(self.view, records)
+            else:
+                messagebox.showinfo("No Data", "There are no records in the database.", parent=self.view)
+        else:
+            messagebox.showwarning("Database Not Selected", "Please select or create a database first.",
+                                   parent=self.view)
