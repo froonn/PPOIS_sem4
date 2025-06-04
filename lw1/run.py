@@ -176,10 +176,8 @@ class MainMenu:
                         self._auction.abort_auction()
                         break
                     else:
-                        winner = self._auction.end_auction()
                         break
                 else:
-                    winner = self._auction.end_auction()
                     break
         except RuntimeError:
             print('Timer expired. Auction ended!')

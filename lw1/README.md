@@ -6,7 +6,7 @@
 
 Операции: операция размещения лота, операция участия в торгах, операция управления ставками, операция завершения аукциона, операция оформления победы и платежей.
 
-У класса TradingPlatform есть два состояния `preparing_for_auction`, `accepting_bids`, `auction_paused` возможные переходы 
+У класса TradingPlatform есть три состояния `preparing_for_auction`, `accepting_bids`, `auction_paused` возможные переходы 
 
 ```
 self.machine.add_transition(trigger='on_start_auction', source='preparing_for_auction', dest='accepting_bids')
@@ -160,6 +160,9 @@ print(bid.amount)
 
 Пример использования:
 ```python
+participant1 = AuctionParticipant(nickname="Иван", balance=5000)
+lot1 = Lot(name="Картина", description="Авторская работа", minimum_bid=1000)
+
 platform = TradingPlatform()
 platform.add(participant1, lot1)
 platform.timeout = 90
